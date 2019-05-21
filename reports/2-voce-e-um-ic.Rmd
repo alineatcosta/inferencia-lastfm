@@ -17,10 +17,14 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 theme_set(theme_bw())
+
+
+library(broom)
+library(boot)
+library(ggbeeswarm)
 ```
 
 ## Os dados
-
 ```{r}
 set.seed(12345)
 
@@ -40,6 +44,127 @@ glimpse(lastfm)
 Utilizaremos ICs para estimar duas métricas sobre os usuários do LastFM em geral durante um período de 6 meses. Em ambos os casos faremos isso a partir de uma amostra de 300 usuários. As duas métricas são: 
 
 1. Qual a proporção de novos artistas em geral escutada por usuários?
+# Proporção de novos artistas escutada = Qtd artistas novos / (Qtd artistas novos + Qtd artistas antigos)
+
+### Aplicando bootstrapping 
+
+```{r}
+funcao_theta = function(df) {
+  df %>%
+    pull(news) %>%
+    mean()
+}
+
+theta_c = funcao_theta(lastfm)
+```
+
+```{r}
+
+repeticoes = 4000
+
+um_bootstrap <- function(x){
+  news = x %>% pull(news)
+  boot_x <- sample(news,           # amostre dos dados
+                   size = NROW(news), # tamanho igual ao recebido
+                   replace = TRUE) # aqui é o bootstrap
+  return(mean(boot_x))
+}
+
+set.seed(1212)
+
+# A REAMOSTRAGEM
+reamostragens = tibble(i = 1:repeticoes) %>% 
+  mutate(theta_c_s = map_dbl(i, ~ um_bootstrap(lastfm)))
+
+reamostragens
+```
+
+Analisando as reamostragens
+```{r}
+reamostragens %>%
+  ggplot(aes(x = theta_c_s)) +
+  geom_histogram(binwidth = .5,
+                 colour = "darkorange",
+                 fill = "white")
+
+# Outra
+reamostragens %>%
+  ggplot(aes(x = theta_c_s - theta_c)) +
+  geom_histogram(binwidth = 1,
+                 colour = "darkblue",
+                 fill = "white")
+```
+
+### Calculando o IC
+
+Agora usamos a distribuição de $\delta* = \hat{\theta}* - \hat{\theta}$ no lugar da de $\delta$.
+
+```{r}
+intervalo = reamostragens %>% 
+  mutate(erro = theta_c_s - theta_c) %>% 
+  summarise(erro_i = quantile(erro, .05), 
+            erro_s = quantile(erro, .95))
+
+intervalo
+```
+
+Agora fazemos o mesmo que antes para estimar onde $\theta$ está usando  $\hat{\theta}$.
+
+```{r}
+intervalo = intervalo %>% 
+  mutate(valor_i = theta_c + erro_i, 
+         valor_s = theta_c + erro_s)
+
+intervalo
+```
+Então o valor real da proporção deveria estar entre 31.9 e 36.6.
+
+# Plotando o Intervalo estimado via bootstrap
+```{r}
+ggplot() +
+  geom_rect(
+    data = intervalo,
+    aes(xmin = valor_i, xmax = valor_s),
+    ymin = -Inf,
+    ymax = Inf,
+    fill = "gold",
+    alpha = .25
+  ) +
+  geom_histogram(
+    data = reamostragens,
+    aes(theta_c_s),
+    binwidth = .5,
+    fill = "white",
+    colour = "darkgrey"
+  ) +
+  geom_vline(xintercept = theta_c,
+             color = "blue",
+             size = 1.2) +
+  geom_vline(xintercept = theta_c, color = "dark green") +
+  labs(title = expression("Intervalo estimado via bootstrap"))
+```
+
+# Usando agr a lib boot
+
+```{r}
+theta <- function(d, i) {
+        d %>% 
+        slice(i) %>%
+        mean()
+}
+
+booted <- boot(data = lastfm, 
+               statistic = theta, 
+               R = 2000)
+
+ci = tidy(booted, 
+          conf.level = .95,
+          conf.method = "bca",
+          conf.int = TRUE)
+
+glimpse(ci)
+```
+
 2. Para os usuários que gostam de música muito pop (mediana_pop > 5), qual a correlação entre a popularidade mediana dos artistas escutado e a proporção dos artistas escutados que eram novos. 
 
 Crie intervalos com 95% de confiança.
