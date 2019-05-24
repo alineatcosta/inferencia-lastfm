@@ -17,7 +17,9 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 theme_set(theme_bw())
+library(here)
 
+install.packages("here")
 
 library(broom)
 library(boot)
@@ -123,7 +125,7 @@ intervalo = intervalo %>%
 
 intervalo
 ```
-Então o valor real da proporção deveria estar entre 0.23 e 0.25.
+Então o valor real da proporção deveria estar entre 0.23 e 0.25 com 95% de confiança.
 
 # Plotando o Intervalo estimado via bootstrap
 ```{r}
@@ -172,13 +174,13 @@ ci = tidy(booted,
 glimpse(ci)
 ```
 
-Então, pela lib boot o IC também foi entre 0.23 e 0.25.
+Então, pela lib boot o IC também deve estar entre 0.23 e 0.25, com 95% de confiança.
 
 2. Para os usuários que gostam de música muito pop (mediana_pop > 5), qual a correlação entre a popularidade mediana dos artistas escutado e a proporção dos artistas escutados que eram novos. 
 
 Crie intervalos com 95% de confiança.
 
-# Primeiro vamos filtrar os usuários que gostam de música muito pop.
+# Primeiro vamos filtrar os usuários que gostam muito de música pop.
 ```{r}
 lastfm_filtered <- lastfm_with_prop %>% 
     filter(mediana_pop > 5) 
@@ -251,3 +253,25 @@ intervalo = intervalo %>%
 
 intervalo
 ```
+
+
+# ######################
+# Usando agr a lib boot
+
+```{r}
+
+theta <- function(d,i=c(1:n)){
+        d2 <- d[i,]
+        return(cor(d2$mediana_pop,d2$prop))
+     }
+booted <- boot(data=lastfm_filtered,statistic=theta,R=4000)
+
+ci = tidy(booted, 
+          conf.level = .95,
+          conf.method = "bca",
+          conf.int = TRUE)
+
+glimpse(ci)
+```
+
+Então, pela lib boot o IC a correlação está entre -0.1 e 0.06.
