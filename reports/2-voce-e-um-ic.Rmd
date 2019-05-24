@@ -21,7 +21,6 @@ theme_set(theme_bw())
 
 library(broom)
 library(boot)
-install.packages("ggbeeswarm")
 library(ggbeeswarm)
 ```
 
@@ -178,3 +177,77 @@ Então, pela lib boot o IC também foi entre 0.23 e 0.25.
 2. Para os usuários que gostam de música muito pop (mediana_pop > 5), qual a correlação entre a popularidade mediana dos artistas escutado e a proporção dos artistas escutados que eram novos. 
 
 Crie intervalos com 95% de confiança.
+
+# Primeiro vamos filtrar os usuários que gostam de música muito pop.
+```{r}
+lastfm_filtered <- lastfm_with_prop %>% 
+    filter(mediana_pop > 5) 
+```
+
+# E adicionar a coluna de correlação (cor)
+```{r}
+lastfm_filtered_with_prop_cor <-  lastfm_filtered %>% 
+    mutate(cor = cor(mediana_pop, prop))
+```
+
+### Calculando theta como a correlação entre as variáveis mediana_pop e prop
+```{r}
+theta_c <- cor(lastfm_filtered$mediana_pop, lastfm_filtered$prop, method = "pearson")
+theta_c
+```
+
+# Aplicando bootstrapping HERE
+```{r}
+
+repeticoes = 4000
+
+um_bootstrap <- function(x){
+  mediana_pop = x %>% pull(mediana_pop)
+  prop = x %>% pull(prop)
+  
+  
+  boot_x <- sample(x,           # amostre dos dados
+                   size = NROW(x), # tamanho igual ao recebido
+                   replace = TRUE) # aqui é o bootstrap
+  return(cor(mediana_pop, prop, method = "pearson")) # não posso retornar a média, tem que ser a correlação
+}
+
+# A REAMOSTRAGEM
+reamostragens = tibble(i = 1:repeticoes) %>% 
+  mutate(theta_c_s = map_dbl(i, ~ um_bootstrap(lastfm_filtered)))
+
+reamostragens
+```
+
+
+# Analisando as reamostragens (?)
+```{r}
+reamostragens %>%
+  ggplot(aes(x = theta_c_s)) +
+  geom_histogram(binwidth = 0.001,
+                 colour = "darkorange",
+                 fill = "white")
+```
+
+### Calculando o IC
+
+Agora usamos a distribuição de $\delta* = \hat{\theta}* - \hat{\theta}$ no lugar da de $\delta$.
+
+```{r}
+intervalo = reamostragens %>% 
+  mutate(erro = theta_c_s - theta_c) %>% 
+  summarise(erro_i = quantile(erro, .05), 
+            erro_s = quantile(erro, .95))
+
+intervalo
+```
+
+Agora fazemos o mesmo que antes para estimar onde $\theta$ está usando  $\hat{\theta}$.
+
+```{r}
+intervalo = intervalo %>% 
+  mutate(valor_i = theta_c + erro_i, 
+         valor_s = theta_c + erro_s)
+
+intervalo
+```
